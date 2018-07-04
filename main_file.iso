@@ -1,0 +1,268 @@
+#include<TimerOne.h>
+#include <TimeLib.h>
+#include <TimeAlarms.h>
+
+AlarmId id;
+
+String Ledstatus="OFF";//curtain is off or not
+String push_btn="OFF";
+
+int light_in=0;
+int light_out=0;
+float temp=0;
+long unsigned int prevchange=0;
+
+const int out_ldr1=0;
+const int out_ldr2=1;
+const int in_ldr=2;
+const int temp_sensor=3;
+
+const int led3=10;
+const int led2=12;
+const int ac=13;
+
+// pin definitions event interrupt
+int buttonPin = 2;
+
+//motors
+const int IN1 = 7;
+const int IN2 = 6;
+const int IN3 = 5;
+const int IN4 = 4;
+
+const int ENA = 9;
+const int ENB = 3;
+
+// global variables
+int toggleState;
+int lastButtonState = 1;
+long unsigned int lastPress;
+volatile int buttonFlag;
+int debounceTime = 20;
+
+void setup() {
+  Serial.begin(9600);
+//motor
+  pinMode (IN1, OUTPUT);
+  pinMode (IN2, OUTPUT);
+  pinMode (IN3, OUTPUT);
+  pinMode (IN4, OUTPUT);
+  pinMode (ENA, OUTPUT);
+  pinMode (ENB, OUTPUT);
+
+//led initialization
+  pinMode(ac,OUTPUT);
+  pinMode(led2,OUTPUT);
+  pinMode(led3,OUTPUT);
+
+ //timer initialization
+  setTime(6,29,40,11,5,18);
+  Timer1.initialize(30000000);
+  Timer1.attachInterrupt(BlinkYellow);
+
+  //hardware interrupt setup
+   pinMode(buttonPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(2), ISR_button, CHANGE);
+  
+}
+
+void ISR_button()
+{
+  buttonFlag = 1;
+}
+
+
+
+void loop() {
+  
+  toggle();
+  lightin();
+  Serial.println("Hello");
+  
+  if(hour()==6 && minute()==30 && second()<=01){
+    Serial.println("time6:30loop");
+  Ledstatus="ON";
+  push_btn="OFF";
+  curtainOn();
+  digitalWrite(ac,LOW);
+  Serial.print(temp);
+  Serial.print(light_in);
+  Serial.print(light_out);
+  }
+  
+  
+  if(hour()==19 && minute()==30 && second()<=20){
+   //curtain close 
+    Serial.println("time7:30loop");
+    push_btn="OFF";
+    Ledstatus="OFF";
+    curtainOff();
+    
+    }
+  
+    
+    if(push_btn=="OFF" && Ledstatus=="ON"){
+      Serial.println("pushbutton off ledstatus-on");
+      if(temp<=36 && light_out<600){
+        Serial.println("temp <36");
+       //calculate light intensity inside and glow bulbs
+      if(millis()- prevchange > 1000 ){    //for chnaging time of reading temperature and light intensity
+        Serial.println("millis-prevchange loop");
+        lightout();        
+        Serial.println("lightout");
+        lightin();
+        Serial.println(light_in);
+        temperature();
+        Serial.println(temp);
+        Serial.println("here");
+        prevchange=millis();    
+        }
+      }
+      else if(temp>36){
+        //temperature is greater than 34 close the curtain
+        Serial.println("temp>36");
+        if(Ledstatus=="ON"){
+          curtainOff();
+          Ledstatus="OFF";
+          lightin();
+          digitalWrite(ac,HIGH);
+          }
+        
+        }
+    }
+    
+}
+
+void BlinkYellow(){
+  if(push_btn =="OFF" && Ledstatus=="OFF"){
+    Serial.println("pushbtn-off ledstatus-off");
+    lightout();//calculates light outside
+    temperature();//calculate temperature
+    if(temperature<36 && lightout<600){
+      curtainOn();
+      Serial.print(temp);
+      Serial.print(light_in);
+      Serial.print(light_out);
+      Ledstatus="ON";
+      }
+    }
+  }
+  
+
+  void toggle(){
+    Serial.println("inside toggle");
+    if((millis() - lastPress) > debounceTime && buttonFlag)
+  {
+    lastPress = millis();   //update lastPress                                                     
+    if(digitalRead(buttonPin) == 0 && lastButtonState == 1)    //if button is pressed and was released last change
+    {
+      toggleState =! toggleState;                 //toggle the LED state
+      if(toggleState==HIGH){
+      push_btn="ON";
+      Ledstatus="ON";
+      curtainOn();
+      }
+      else if(toggleState==LOW){
+      push_btn="OFF";
+      Ledstatus="OFF";
+      curtainOff();
+      }
+      lastButtonState = 0;    //record the lastButtonState
+    }
+    
+    else if(digitalRead(buttonPin) == 1 && lastButtonState == 0)    //if button is not pressed, and was pressed last change
+    {
+      lastButtonState = 1;    //record the lastButtonState
+    }
+    buttonFlag = 0;
+  }
+}
+
+void curtainOn(){
+  int i=0;
+  while(i<150){
+  
+  Serial.println("curtainOn1");
+  analogWrite(ENA, 200);
+  analogWrite(ENB, 200); 
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+   i++;}
+   Serial.println("curtainon1end");
+  motoroff();
+  
+  }
+
+void curtainOff(){
+  int i=0;
+  while(i<150){
+  Serial.println("curtainoff1");
+  analogWrite(ENA, 200);
+  analogWrite(ENB, 200); 
+  
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+ i++;}
+ Serial.println("curtainOffend");
+  motoroff();
+  }
+
+ void motoroff(){
+  Serial.println("motoroff");
+  analogWrite(ENA, 150);
+  analogWrite(ENB, 150); 
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+ Serial.println("motoroff1");
+  }
+
+void lightout(){
+  int light1=analogRead(out_ldr1);
+int light2=analogRead(out_ldr2);
+Serial.println(light1);
+Serial.println(light2);
+light_out=(light1+light2)/2;
+  Serial.println(light_out);
+  }
+
+  void temperature(){
+    int value=analogRead(temp_sensor);
+    float millivolts=(value/1024.0)*5000;
+  
+  float temp=millivolts/10;  //sensor output is 10mv per degree celsius
+ Serial.println(temp);
+    }
+  void lightin(){
+    Serial.print("lightin");
+     light_in=analogRead(in_ldr);
+     Serial.println(light_in);
+    
+    if(light_in<=475){
+      //no bulb
+      Serial.print("no bulb");
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,LOW); 
+      }
+     else if(light_in>475 && light_in<=725){
+      //one bulb
+      Serial.println("one bulb");
+      digitalWrite(led2,LOW);
+      digitalWrite(led3,HIGH); 
+      
+      }
+      else if(light_in>725){
+        //two bulbs
+        Serial.println("two bulb");
+        digitalWrite(led2,HIGH);
+        digitalWrite(led3,HIGH); 
+        }
+    
+    }
